@@ -275,6 +275,53 @@ const char *xwi_determine_base_ship_class(const XWMFlightGroup *fg)
 	return nullptr;
 }
 
+const char* xwi_determine_generic_ship_name(const XWMFlightGroup* fg)
+{
+	switch (fg->flightGroupType)
+	{
+		case XWMFlightGroupType::fg_X_Wing:
+			return "X-Wing";
+		case XWMFlightGroupType::fg_Y_Wing:
+			return "Y-Wing";
+		case XWMFlightGroupType::fg_A_Wing:
+			return "A-Wing";
+		case XWMFlightGroupType::fg_TIE_Fighter:
+			return "TIE Fighter";
+		case XWMFlightGroupType::fg_TIE_Interceptor:
+			return "TIE Interceptor";
+		case XWMFlightGroupType::fg_TIE_Bomber:
+			return "TIE Bomber";
+		case XWMFlightGroupType::fg_Gunboat:
+			return "Assault Gunboat";
+		case XWMFlightGroupType::fg_Transport:
+			return "Transport";
+		case XWMFlightGroupType::fg_Shuttle:
+			return "Shuttle";
+		case XWMFlightGroupType::fg_Tug:
+			return "Freighter";
+		case XWMFlightGroupType::fg_Container:
+			return "Container";
+		case XWMFlightGroupType::fg_Freighter:
+			return "Freighter";
+		case XWMFlightGroupType::fg_Calamari_Cruiser:
+			return "Light Cruiser";
+		case XWMFlightGroupType::fg_Nebulon_B_Frigate:
+			return "Frigate";
+		case XWMFlightGroupType::fg_Corellian_Corvette:
+			return "Corvette";
+		case XWMFlightGroupType::fg_Imperial_Star_Destroyer:
+			return "Star Destroyer";
+		case XWMFlightGroupType::fg_TIE_Advanced:
+			return "TIE Advanced";
+		case XWMFlightGroupType::fg_B_Wing:
+			return "B-Wing";
+		default:
+			break;
+	}
+
+	return nullptr;
+}
+
 int xwi_determine_ship_class(const XWMFlightGroup *fg)
 {
 	// base ship class must exist
@@ -641,6 +688,127 @@ void parse_xwi_flightgroup(mission *pm, const XWingMission *xwim, const XWMFligh
 
 		Parse_objects.push_back(pobj);
 	}
+
+	// Determine the objectives of the flightgroup
+	xwi_maybe_add_objective(xwim, fg, nullptr);
+}
+
+void xwi_maybe_add_objective(const XWingMission* xwim, const XWMFlightGroup* fg, const XWMObject* oj)
+{
+	if (fg != nullptr && fg->objective == XWMObjective::o_None)
+		return;
+	if (oj != nullptr && oj->objectGoal == XWMObjectGoal::ojg_Neither)
+		return;
+
+	Mission_goals.emplace_back();
+	auto goal = &Mission_goals.back();
+	goal->name = "Goal " + Mission_goals.size();
+	goal->type = PRIMARY_GOAL;
+	goal->flags = MGF_NO_MUSIC;
+
+	SCP_string goal_description;
+	char sexp_buf[NAME_LENGTH + 50];
+
+	if (fg != nullptr) // It's a flightgroup
+	{
+		switch (fg->objective)
+		{
+			case XWMObjective::o_All_Destroyed:
+				sprintf(goal->message, "%s%s %s must be destroyed.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( is-destroyed-delay 0 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_All_Survive:
+				sprintf(goal->message, "%s%s %s must survive.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( has-departed-delay 0 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_All_Captured: // Wrote a new scripted sexp for this
+				sprintf(goal->message, "%s%s %s must be captured.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-captured 100 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_All_Docked: // WIP Script
+				sprintf(goal->message, "%s%s %s must have docked.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-docked 100 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_Special_Craft_Destroyed:
+				sprintf(goal->message, "Special craft %s %s %d must be destroyed.", xwi_determine_generic_ship_name(fg), fg->designation.c_str(), fg->specialShipNumber);
+				sprintf(sexp_buf, "( is-destroyed-delay 0 \"%s\" )", fg->designation.c_str() + fg->specialShipNumber); // Is this like "Red1" or is this invalid?
+				break;
+			case XWMObjective::o_Special_Craft_Survive:
+				sprintf(goal->message, "Special craft %s %s %d must survive.", xwi_determine_generic_ship_name(fg), fg->designation.c_str(), fg->specialShipNumber);
+				sprintf(sexp_buf, "( has-departed-delay 0 \"%s\" )", fg->designation.c_str() + fg->specialShipNumber); // Is this like "Red1" or is this invalid?
+				break;
+			case XWMObjective::o_Special_Craft_Captured:
+				sprintf(goal->message, "Special craft %s %s %d must be captured.", xwi_determine_generic_ship_name(fg), fg->designation.c_str(), fg->specialShipNumber);
+				sprintf(sexp_buf, "( fotg-is-ship-captured \"%s\" )", fg->designation.c_str() + fg->specialShipNumber); // Is this like "Red1" or is this invalid?
+				break;
+			case XWMObjective::o_Special_Craft_Docked:
+				sprintf(goal->message, "Special craft %s %s %d must have docked.", xwi_determine_generic_ship_name(fg), fg->designation.c_str(), fg->specialShipNumber);
+				sprintf(sexp_buf, "( has-docked-delay \"%s\" nil 1 0)", fg->designation.c_str() + fg->specialShipNumber); // Is this like "Red1" or is this invalid?
+				break;
+			case XWMObjective::o_50_Percent_Destroyed:
+				sprintf(goal->message, "50% of %s%s %s must be destroyed.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( percent-ships-destroyed 50 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_50_Percent_Survive:
+				sprintf(goal->message, "50% of %s%s %s must survive.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( percent-ships-departed 50 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_50_Percent_Captured: // Wrote a new scripted sexp for this
+				sprintf(goal->message, "50% of %s%s %s must be captured.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-captured 50 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_50_Percent_Docked: // WIP Script
+				sprintf(goal->message, "50% of %s%s %s must have docked.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-docked 50 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_All_Identified: // Wrote a new scripted sexp for this
+				sprintf(goal->message, "%s%s %s must be identified.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-identified 100 \"%s\" )", fg->designation.c_str());
+				break;				 
+			case XWMObjective::o_Special_Craft_Identifed:
+				sprintf(goal->message, "Special craft %s %s %d must be identified.", xwi_determine_generic_ship_name(fg), fg->designation.c_str(), fg->specialShipNumber);
+				sprintf(sexp_buf, "( fotg-is-ship-identified \"%s\" )", fg->designation.c_str() + fg->specialShipNumber); // Is this like "Red1" or is this invalid?
+				break;
+			case XWMObjective::o_50_Percent_Identified: // Wrote a new scripted sexp for this
+				sprintf(goal->message, "50% of %s%s %s must be identified.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( fotg-percent-wing-identified 50 \"%s\" )", fg->designation.c_str());
+				break;
+			case XWMObjective::o_Arrive:
+				sprintf(goal->message, "%s%s %s must have arrived.", xwi_determine_generic_ship_name(fg), is_wing(fg) ? " Group" : "", fg->designation.c_str());
+				sprintf(sexp_buf, "( has-arrived-delay 0 \"%s\" )", fg->designation.c_str());
+				break;
+			default:
+				break;
+		}
+		
+		Mp = sexp_buf;
+		goal->formula = get_sexp_main();
+		
+	} 
+	
+	else if (oj != nullptr) // It's an object
+	{
+		switch (oj->objectGoal)
+		{
+			case XWMObjectGoal::ojg_Neither:
+				return;
+			case XWMObjectGoal::ojg_Destroyed:
+				sprintf(goal->message, "%s%s must be destroyed.",xwi_determine_object_class(oj), oj->numberOfObjects>1 ? " Group" : "");
+				sprintf(sexp_buf, "( is-destroyed-delay 0 \"%s\" )", xwi_determine_object_class(oj));
+				break;
+			case XWMObjectGoal::ojg_Survive:
+				sprintf(goal->message, "%s%s must survive.",xwi_determine_object_class(oj), oj->numberOfObjects>1 ? " Group" : "");
+				sprintf(sexp_buf, "( !is-destroyed-delay 0 \"%s\" )", xwi_determine_object_class(oj));
+				break;
+			default:
+				break;
+		}
+
+		Mp = sexp_buf;
+		goal->formula = get_sexp_main();
+
+	}
+	
 }
 
 const char *xwi_determine_object_class(const XWMObject *oj)
@@ -908,6 +1076,7 @@ void parse_xwi_objectgroup(mission *pm, const XWingMission *xwim, const XWMObjec
 			Parse_objects.push_back(pobj);
 		}
 	}
+	xwi_maybe_add_objective(xwim, nullptr, oj);
 }	
 
 void parse_xwi_mission(mission *pm, const XWingMission *xwim)
