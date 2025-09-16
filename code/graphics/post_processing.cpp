@@ -40,27 +40,66 @@ PostEffectUniformType mapUniformNameToType(const SCP_string& uniform_name)
 // used by In-Game Options menu
 bool Post_processing_enable_lightshafts = true;
 
-static auto LightshaftsOption __UNUSED = options::OptionBuilder<bool>("Graphics.Lightshafts",
+void parse_lightshafts_func()
+{
+	bool enabled;
+	stuff_boolean(&enabled);
+	Post_processing_enable_lightshafts = enabled;
+}
+
+// used by In-Game Options menu
+bool Post_processing_enable_sunglare = true;
+
+void parse_sunglare_func()
+{
+	bool enabled;
+	stuff_boolean(&enabled);
+	Post_processing_enable_sunglare = enabled;
+}
+
+auto LightshaftsOption = options::OptionBuilder<bool>("Graphics.Lightshafts",
                      std::pair<const char*, int>{"Lightshafts", 1724},
                      std::pair<const char*, int>{"Enables or disables lightshafts (requires post-processing)", 1725})
-                     .category("Graphics")
-                     .default_val(true)
+                     .category(std::make_pair("Graphics", 1825))
+                     .default_func([]() { return Post_processing_enable_lightshafts;})
                      .level(options::ExpertLevel::Advanced)
                      .bind_to(&Post_processing_enable_lightshafts)
                      .importance(60)
+                     .parser(parse_lightshafts_func)
                      .finish();
 
+auto SunglareOption = options::OptionBuilder<bool>("Graphics.Sunglare",
+					std::pair<const char*, int>{"Sunglare", 1880},
+					std::pair<const char*, int>{"Enables or disables glare from suns", 1881})
+			.category(std::make_pair("Graphics", 1825))
+			.default_func([]() { return Post_processing_enable_sunglare;})
+			.level(options::ExpertLevel::Advanced)
+			.bind_to(&Post_processing_enable_sunglare)
+			.importance(61)
+			.parser(parse_sunglare_func)
+			.finish();
+
 int Post_processing_bloom_intensity = 25; // using default value of Cmdline_bloom_intensity
+
+void parse_bloom_intensity_func()
+{
+	int value;
+	stuff_int(&value);
+	CLAMP(value, 0, 200);
+	Post_processing_bloom_intensity = value;
+}
 
 static auto BloomIntensityOption __UNUSED = options::OptionBuilder<int>("Graphics.BloomIntensity",
                      std::pair<const char*, int>{"Bloom intensity", 1701},
                      std::pair<const char*, int>{"Sets the bloom intensity (requires post-processing)", 1702})
-                     .category("Graphics")
+                     .category(std::make_pair("Graphics", 1825))
                      .range(0, 200)
                      .level(options::ExpertLevel::Advanced)
-                     .default_val(25)
+                     .default_func([](){return Post_processing_bloom_intensity;})
                      .bind_to(&Post_processing_bloom_intensity)
                      .importance(55)
+                     .flags({options::OptionFlags::RangeTypeInteger})
+                     .parser(parse_bloom_intensity_func)
                      .finish();
 } // namespace
 
@@ -214,7 +253,7 @@ bool gr_lightshafts_enabled()
 		return false;
 	}
 
-	// supernova glare should disable lightshafts
+	// supernova glare should switch to legacy lightshafts
 	if (supernova_stage() >= SUPERNOVA_STAGE::CLOSE) {
 		return false;
 	}
@@ -223,11 +262,21 @@ bool gr_lightshafts_enabled()
 		return false;
 	}
 
-	if (Using_in_game_options) {
-		return graphics::LightshaftsOption->getValue();
-	} else {
-		return !Cmdline_force_lightshaft_off;
+	return graphics::LightshaftsOption->getValue();
+}
+
+bool gr_sunglare_enabled()
+{
+	if (gr_screen.mode == GR_STUB) {
+		return false;
 	}
+
+	// supernova glare gets to override this and actually display glare
+	if (supernova_stage() >= SUPERNOVA_STAGE::CLOSE) {
+		return true;
+	}
+
+	return graphics::SunglareOption->getValue();
 }
 
 int gr_bloom_intensity()
@@ -240,11 +289,7 @@ int gr_bloom_intensity()
 		return 0;
 	}
 
-	if (Using_in_game_options) {
-		return graphics::BloomIntensityOption->getValue();
-	} else {
-		return Cmdline_bloom_intensity;
-	}
+	return graphics::BloomIntensityOption->getValue();
 }
 
 void gr_set_bloom_intensity(int intensity)
@@ -253,9 +298,6 @@ void gr_set_bloom_intensity(int intensity)
 		return;
 	}
 
-	if (Using_in_game_options) {
-		graphics::Post_processing_bloom_intensity = intensity;
-	} else {
-		Cmdline_bloom_intensity = intensity;
-	}
+	graphics::Post_processing_bloom_intensity = intensity;
+	options::OptionsManager::instance()->set_ingame_range_option("Graphics.BloomIntensity", intensity);
 }

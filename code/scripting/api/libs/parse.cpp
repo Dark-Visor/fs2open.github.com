@@ -81,6 +81,33 @@ ADE_FUNC(displayMessage, l_Parsing, "string message, boolean error = false",
 	return ADE_RETURN_TRUE;
 }
 
+ADE_FUNC(skipToString, l_Parsing, "string token", "Search for specified string, skipping everything up to that point.", "boolean",
+         "true if the operation was successful, false otherwise")
+{
+	if (Parse_text == nullptr) {
+		LuaError(L, "Parsing system is currently not active!");
+		return ADE_RETURN_FALSE;
+	}
+
+	const char* str;
+	if (!ade_get_args(L, "s", &str)) {
+		return ADE_RETURN_FALSE;
+	}
+
+	try {
+		int found = skip_to_string(str);
+
+		if (found == 1) {
+			return ADE_RETURN_TRUE;
+		} else {
+			return ADE_RETURN_FALSE;
+		}
+	} catch (const parse::ParseException& e) {
+		mprintf(("PARSE: Error while parsing: %s\n", e.what()));
+		return ADE_RETURN_FALSE;
+	}
+}
+
 ADE_FUNC(requiredString, l_Parsing, "string token", "Require that a string appears at the current position.", "boolean",
          "true if the operation was successful, false otherwise")
 {
@@ -147,7 +174,7 @@ ADE_FUNC(getString, l_Parsing, nullptr, "Gets a single line of text from the fil
 	}
 }
 
-ADE_FUNC(getFloat, l_Parsing, nullptr, "Gets a floating point number from the file", "string", "number or nil on error")
+ADE_FUNC(getFloat, l_Parsing, nullptr, "Gets a floating point number from the file", "number", "number or nil on error")
 {
 	if (Parse_text == nullptr) {
 		LuaError(L, "Parsing system is currently not active!");
@@ -165,7 +192,7 @@ ADE_FUNC(getFloat, l_Parsing, nullptr, "Gets a floating point number from the fi
 	}
 }
 
-ADE_FUNC(getInt, l_Parsing, nullptr, "Gets an integer number from the file", "string", "number or nil on error")
+ADE_FUNC(getInt, l_Parsing, nullptr, "Gets an integer number from the file", "number", "number or nil on error")
 {
 	if (Parse_text == nullptr) {
 		LuaError(L, "Parsing system is currently not active!");

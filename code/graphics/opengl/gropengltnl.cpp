@@ -39,6 +39,9 @@
 #include "render/3d.h"
 #include "weapon/trails.h"
 
+#define MODEL_SDR_FLAG_MODE_CPP
+#include "def_files/data/effects/model_shader_flags.h"
+
 extern int GLOWMAP;
 extern int SPECMAP;
 extern int SPECGLOSSMAP;
@@ -82,6 +85,7 @@ static opengl_vertex_bind GL_array_binding_data[] =
 		{ vertex_format_data::MODEL_ID,		1, GL_FLOAT,			GL_FALSE, opengl_vert_attrib::MODEL_ID	},
 		{ vertex_format_data::RADIUS,		1, GL_FLOAT,			GL_FALSE, opengl_vert_attrib::RADIUS	},
 		{ vertex_format_data::UVEC,			3, GL_FLOAT,			GL_FALSE, opengl_vert_attrib::UVEC		},
+		{ vertex_format_data::MATRIX4,		16, GL_FLOAT,			GL_FALSE, opengl_vert_attrib::MODEL_MATRIX },
 	};
 
 struct opengl_buffer_object {
@@ -843,18 +847,33 @@ void opengl_tnl_set_model_material(model_material *material_info)
 		// it is uncritical at this time as texture reads are gated behind feature flags in the shader.
 		// This will be fixed in future cleanups, where we plan to introduce engine-generated default textures to substitute
 		// if the material doesn't provide anything.
-		Current_shader->program->Uniforms.setTextureUniform("sBasemap", 0);
-		Current_shader->program->Uniforms.setTextureUniform("sGlowmap", 1);
-		Current_shader->program->Uniforms.setTextureUniform("sSpecmap", 2);
-		Current_shader->program->Uniforms.setTextureUniform("sEnvmap", 3);
-		Current_shader->program->Uniforms.setTextureUniform("sIrrmap", 11);
-		Current_shader->program->Uniforms.setTextureUniform("sNormalmap", 4);
-		Current_shader->program->Uniforms.setTextureUniform("sHeightmap", 5);
-		Current_shader->program->Uniforms.setTextureUniform("sAmbientmap", 6);
-		Current_shader->program->Uniforms.setTextureUniform("sMiscmap", 7);
-		Current_shader->program->Uniforms.setTextureUniform("shadow_map", 8);
+		const bool setAllUniforms = gr_is_capable(gr_capability::CAPABILITY_LARGE_SHADER);
+		const int flags = material_info->get_shader_runtime_early_flags() | material_info->get_shader_runtime_flags();
+
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_DIFFUSE))
+			Current_shader->program->Uniforms.setTextureUniform("sBasemap", 0);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_GLOW))
+			Current_shader->program->Uniforms.setTextureUniform("sGlowmap", 1);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_SPEC))
+			Current_shader->program->Uniforms.setTextureUniform("sSpecmap", 2);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_ENV)) {
+			Current_shader->program->Uniforms.setTextureUniform("sEnvmap", 3);
+			Current_shader->program->Uniforms.setTextureUniform("sIrrmap", 11);
+		}
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_NORMAL))
+			Current_shader->program->Uniforms.setTextureUniform("sNormalmap", 4);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_AMBIENT))
+			Current_shader->program->Uniforms.setTextureUniform("sAmbientmap", 6);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_MISC))
+			Current_shader->program->Uniforms.setTextureUniform("sMiscmap", 7);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_SHADOWS))
+			Current_shader->program->Uniforms.setTextureUniform("shadow_map", 8);
 		Current_shader->program->Uniforms.setTextureUniform("sFramebuffer", 9);
-		Current_shader->program->Uniforms.setTextureUniform("transform_tex", 10);
+		if (setAllUniforms || (flags & MODEL_SDR_FLAG_TRANSFORM))
+			Current_shader->program->Uniforms.setTextureUniform("transform_tex", 10);
+
+		//No shader ever defines this, so don't push it.
+		//Current_shader->program->Uniforms.setTextureUniform("sHeightmap", 5);
 
 		if (material_info->get_texture_map(TM_BASE_TYPE) > 0) {
 			gr_opengl_tcache_set(material_info->get_texture_map(TM_BASE_TYPE),
@@ -941,7 +960,7 @@ void opengl_tnl_set_model_material(model_material *material_info)
 
 		if (material_info->get_animated_effect() > 0) {
 			if (Scene_framebuffer_in_frame) {
-				GL_state.Texture.Enable(9, GL_TEXTURE_2D, Scene_effect_texture);
+				GL_state.Texture.Enable(9, GL_TEXTURE_2D, Scene_composite_texture);
 				glDrawBuffer(GL_COLOR_ATTACHMENT0);
 			} else {
 				GL_state.Texture.Enable(9, GL_TEXTURE_2D, Framebuffer_fallback_texture_id);
@@ -1032,7 +1051,7 @@ void opengl_tnl_set_material_distortion(distortion_material* material_info)
 		});
 
 	Current_shader->program->Uniforms.setTextureUniform("frameBuffer", 2);
-	GL_state.Texture.Enable(2, GL_TEXTURE_2D, Scene_effect_texture);
+	GL_state.Texture.Enable(2, GL_TEXTURE_2D, Scene_composite_texture);
 
 	Current_shader->program->Uniforms.setTextureUniform("distMap", 3);
 	if (material_info->get_thruster_rendering()) {
@@ -1171,7 +1190,7 @@ void opengl_bind_vertex_component(const vertex_format_data &vert_component, size
 
 	if ( Current_shader != NULL ) {
 		// grabbing a vertex attribute is dependent on what current shader has been set. i hope no one calls opengl_bind_vertex_layout before opengl_set_current_shader
-		GLint index = opengl_shader_get_attribute(attrib_info.attribute_id);
+		GLint index = attrib_info.attribute_id;
 
 		if ( index >= 0 ) {
 			GL_state.Array.EnableVertexAttrib(index);
@@ -1215,15 +1234,23 @@ void opengl_bind_vertex_array(const vertex_layout& layout) {
 
 		auto attribIndex = attrib_info.attribute_id;
 
-		glEnableVertexAttribArray(attribIndex);
-		glVertexAttribFormat(attribIndex,
-							 bind_info.size,
-							 bind_info.data_type,
-							 bind_info.normalized,
-							 static_cast<GLuint>(component->offset));
+		GLuint add_val_index = 0;
+		for (GLint size = bind_info.size; size > 0; size -=4) {
+			glEnableVertexAttribArray(attribIndex + add_val_index);
+			glVertexAttribFormat(attribIndex + add_val_index,
+				std::min(size, 4),
+				bind_info.data_type,
+				bind_info.normalized,
+				static_cast<GLuint>(component->offset) + add_val_index * 16);
 
-		// Currently, all vertex data comes from one buffer.
-		glVertexAttribBinding(attribIndex, 0);
+			glVertexAttribBinding(attribIndex + add_val_index, static_cast<GLuint>(component->buffer_number));
+
+			add_val_index++;
+		}
+
+		if (component->divisor != 0) {
+			glVertexBindingDivisor(static_cast<GLuint>(component->buffer_number), static_cast<GLuint>(component->divisor));
+		}
 	}
 
 	Stored_vertex_arrays.insert(std::make_pair(layout, vao));
@@ -1247,5 +1274,30 @@ void opengl_bind_vertex_layout(vertex_layout &layout, GLuint vertexBuffer, GLuin
 									vertexBuffer,
 									static_cast<GLintptr>(base_offset),
 									static_cast<GLsizei>(layout.get_vertex_stride()));
+	GL_state.Array.BindElementBuffer(indexBuffer);
+}
+
+void opengl_bind_vertex_layout_multiple(vertex_layout &layout, const SCP_vector<GLuint>& vertexBuffer, GLuint indexBuffer, size_t base_offset) {
+	GR_DEBUG_SCOPE("Bind vertex layout");
+	if (!GLAD_GL_ARB_vertex_attrib_binding) {
+		/*
+		 * This will mean that decals don't render.
+		 * It's possible, but way too much effort to support non-instanced fallback rendering here.
+		 * By my estimation, every GPU you might still run FSO run supports this.
+		 * per mesamatrix.net, even the least-extension supporting mesa drivers all support this extension
+		 * */
+		return;
+	}
+
+	opengl_bind_vertex_array(layout);
+
+	GLuint i = 0;
+	for(const auto& buffer : vertexBuffer) {
+		GL_state.Array.BindVertexBuffer(i,
+			buffer,
+			static_cast<GLintptr>(base_offset),
+			static_cast<GLsizei>(layout.get_vertex_stride(i)));
+		i++;
+	}
 	GL_state.Array.BindElementBuffer(indexBuffer);
 }

@@ -74,10 +74,10 @@ void set_physics_controls();
 int dup_object(object* objp);
 int create_object_on_grid(int waypoint_instance = -1);
 int create_object(vec3d* pos, int waypoint_instance = -1);
-int create_player(int num, vec3d* pos, matrix* orient, int type = -1, int init = 1);
+int create_player(vec3d* pos, matrix* orient, int type = -1);
 void create_new_mission();
 void reset_mission();
-void clear_mission();
+void clear_mission(bool fast_reload = false);
 int query_valid_object(int index = cur_object_index);
 int query_valid_ship(int index = cur_object_index);
 int query_valid_waypoint(int index = cur_object_index);
@@ -105,7 +105,7 @@ int query_initial_orders_conflict(int wing);
 int query_initial_orders_empty(ai_goal* ai_goals);
 int set_reinforcement(char* name, int state);
 int get_docking_list(int model_index);
-int rename_ship(int ship, char* name);
+int rename_ship(int ship, const char* name);
 void fix_ship_name(int ship);
 int internal_integrity_check();
 void correct_marking();
@@ -119,7 +119,7 @@ int reference_handler(const char* name, sexp_ref_type type, int obj);
 int orders_reference_handler(sexp_src source, int source_index, char* msg);
 int sexp_reference_handler(int node, sexp_src source, int source_index, char* msg);
 char* object_name(int obj);
-const char* get_order_name(int order);
+const char* get_order_name(ai_goal_mode order);
 void object_moved(object* ptr);
 int invalidate_references(const char* name, sexp_ref_type type);
 int query_whole_wing_marked(int wing);
@@ -142,5 +142,7 @@ extern void update_custom_wing_indexes();
 extern void stuff_special_arrival_anchor_name(char* buf, int iff_index, int restrict_to_players, int retail_format);
 extern void stuff_special_arrival_anchor_name(char* buf, int anchor_num, int retail_format);
 extern void update_texture_replacements(const char* old_name, const char* new_name);
+
+extern void time_to_mission_info_string(const std::tm* src, char* dest, size_t dest_max_len);
 
 #endif

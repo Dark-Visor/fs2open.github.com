@@ -1,3 +1,5 @@
+#pragma once
+
 /*
  * Copyright (C) Volition, Inc. 1999.  All rights reserved.
  *
@@ -37,12 +39,16 @@ public :
 	//Get
 	float GetValue(float x_val) const;
 
+	// Get
+	float GetValueIntegrated(float x_val) const;
+
 	//Set
 	void ParseData();
 };
 
 extern SCP_vector<Curve> Curves;
 
-extern int curve_get_by_name(SCP_string& in_name);
+extern int curve_get_by_name(const SCP_string& in_name);
+extern int curve_parse(const char* err_msg);
 extern void curves_init();
 

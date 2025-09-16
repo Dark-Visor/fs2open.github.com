@@ -383,7 +383,7 @@ void get_vector_data(ubyte *data, int *size, vec3d vec)
 }
 */
 // send the specified data packet to all players
-void multi_io_send(net_player *pl, ubyte *data, int len)
+void multi_io_send(net_player *pl, const ubyte *data, int len)
 {		
 	// invalid
 	if((pl == NULL) || (NET_PLAYER_NUM(pl) >= MAX_PLAYERS)){
@@ -420,7 +420,7 @@ void multi_io_send(net_player *pl, ubyte *data, int len)
 	pl->s_info.unreliable_buffer_size += len;
 }
 
-void multi_io_send_to_all(ubyte *data, int length, net_player *ignore)
+void multi_io_send_to_all(const ubyte *data, int length, const net_player *ignore)
 {	
 	int i;
 	Assert(MULTIPLAYER_MASTER);
@@ -471,7 +471,7 @@ void multi_io_send_force(net_player *pl)
 }
 
 // send the data packet to all players via their reliable sockets
-void multi_io_send_reliable(net_player *pl, ubyte *data, int len)
+void multi_io_send_reliable(net_player *pl, const ubyte *data, int len)
 {	
 	// invalid
 	if((pl == NULL) || (NET_PLAYER_NUM(pl) >= MAX_PLAYERS)){
@@ -508,7 +508,7 @@ void multi_io_send_reliable(net_player *pl, ubyte *data, int len)
 	pl->s_info.reliable_buffer_size += len;
 }
 
-void multi_io_send_to_all_reliable(ubyte* data, int length, net_player *ignore)
+void multi_io_send_to_all_reliable(const ubyte* data, int length, const net_player *ignore)
 {	
 	int i;
 	Assert(MULTIPLAYER_MASTER);
@@ -2507,7 +2507,7 @@ void process_netplayer_update_packet( ubyte *data, header *hinfo )
 #define EXTRA_DEATH_VAPORIZED		(1<<0)
 #define EXTRA_DEATH_WASHED			(1<<1)
 // send a packet indicating a ship has been killed
-void send_ship_kill_packet( object *objp, object *other_objp, float percent_killed, int self_destruct )
+void send_ship_kill_packet( const object *objp, const object *other_objp, float percent_killed, int self_destruct )
 {
 	int packet_size, model;
 	ubyte data[MAX_PACKET_SIZE], was_player, extra_death_info, vaporized;
@@ -3315,7 +3315,7 @@ void process_countermeasure_fired_packet( ubyte *data, header *hinfo )
 }
 
 // send a packet indicating that a turret has been fired
-void send_turret_fired_packet( int ship_objnum, int subsys_index, int weapon_objnum )
+void send_turret_fired_packet( int ship_objnum, int subsys_index, int weapon_objnum, float dist_to_target, float target_radius )
 {
 	int packet_size;
 	ushort pnet_signature;
@@ -3370,6 +3370,10 @@ void send_turret_fired_packet( int ship_objnum, int subsys_index, int weapon_obj
 	else {
 		ADD_FLOAT(ZERO_VALUE);
 	}
+
+	ADD_FLOAT(dist_to_target);
+
+	ADD_FLOAT(target_radius);
 	
 	multi_io_send_to_all(data, packet_size);
 
@@ -3390,6 +3394,8 @@ void process_turret_fired_packet( ubyte *data, header *hinfo )
 	ubyte has_sig = 0;
 	ship *shipp;
 	float angle1, angle2;
+	float dist_to_target;
+	float target_radius;
 
 	// get the data for the turret fired packet
 	offset = HEADER_LENGTH;	
@@ -3405,6 +3411,8 @@ void process_turret_fired_packet( ubyte *data, header *hinfo )
 	GET_SHORT( turret_index );
 	GET_FLOAT( angle1 );
 	GET_FLOAT( angle2 );
+	GET_FLOAT( dist_to_target );
+	GET_FLOAT( target_radius );
 	PACKET_SET_SIZE();				// move our counter forward the number of bytes we have read
 
 	// if we don't have a valid weapon index then bail
@@ -3425,7 +3433,7 @@ void process_turret_fired_packet( ubyte *data, header *hinfo )
 	}
 
 	// make an orientation matrix from the o_fvec
-	vm_vector_2_matrix(&orient, &o_fvec, NULL, NULL);
+	vm_vector_2_matrix_norm(&orient, &o_fvec, nullptr, nullptr);
 
 	// find this turret, and set the position of the turret that just fired to be where it fired.  Quite a
 	// hack, but should be suitable.
@@ -3448,12 +3456,18 @@ void process_turret_fired_packet( ubyte *data, header *hinfo )
 	// get the world position of the weapon
 	ship_get_global_turret_info(objp, ssp->system_info, &pos, &temp);
 
+	auto launch_curve_data = WeaponLaunchCurveData {
+		ssp->system_info->turret_num_firing_points,
+		dist_to_target,
+		target_radius,
+	};
+
 	// create the weapon object
 	if(wnet_signature != 0){		
 		multi_set_network_signature( wnet_signature, MULTI_SIG_NON_PERMANENT );
 	}
 
-	weapon_objnum = weapon_create( &pos, &orient, wid, OBJ_INDEX(objp), -1, 1, 0, 0.0f, ssp);
+	weapon_objnum = weapon_create( &pos, &orient, wid, OBJ_INDEX(objp), -1, true, false, 0.0f, ssp, launch_curve_data);
 
 	if (weapon_objnum != -1) {
 		if ( Weapon_info[wid].launch_snd.isValid() ) {
@@ -5146,10 +5160,10 @@ void send_ai_info_update_packet( object *objp, char what, object * other_objp )
 
 		// for orders, we only need to send a little bit of information here.  Be sure that the
 		// first order for this ship is active
-		Assert( (aip->active_goal != AI_GOAL_NONE) && (aip->active_goal != AI_ACTIVE_GOAL_DYNAMIC) );
+		Assert( (aip->active_goal != AI_ACTIVE_GOAL_NONE) && (aip->active_goal != AI_ACTIVE_GOAL_DYNAMIC) );
 		aigp = &aip->goals[aip->active_goal];
 
-		ADD_INT( aigp->ai_mode );
+		ADD_INT( static_cast<int>(aigp->ai_mode) );
 		ADD_INT( aigp->ai_submode );
 
 		shipnum = -1;
@@ -5167,7 +5181,7 @@ void send_ai_info_update_packet( object *objp, char what, object * other_objp )
 		ADD_USHORT( other_signature );
 
 		// for docking, add the dock and dockee index
-		if (aigp->ai_mode & (AI_GOAL_DOCK | AI_GOAL_REARM_REPAIR)) {
+		if (aigp->ai_mode == AI_GOAL_DOCK || aigp->ai_mode == AI_GOAL_REARM_REPAIR) {
 			Assert(aigp->flags[AI::Goal_Flags::Dockee_index_valid] && aigp->flags[AI::Goal_Flags::Docker_index_valid]);
 			Assert( (aigp->docker.index >= 0) && (aigp->docker.index < UCHAR_MAX) );
 			Assert( (aigp->dockee.index >= 0) && (aigp->dockee.index < UCHAR_MAX) );
@@ -5192,7 +5206,8 @@ void send_ai_info_update_packet( object *objp, char what, object * other_objp )
 void process_ai_info_update_packet( ubyte *data, header *hinfo)
 {
 	int offset = HEADER_LENGTH;
-	int mode, submode;
+	ai_goal_mode mode;
+	int int_mode, submode;
 	ushort net_signature, other_net_signature;
 	object *objp, *other_objp;
 	ai_info *aip;
@@ -5237,10 +5252,12 @@ void process_ai_info_update_packet( ubyte *data, header *hinfo)
 		break;
 
 	case AI_UPDATE_ORDERS:
-		GET_INT( mode );
+		GET_INT( int_mode );
+		mode = int_to_ai_goal_mode(int_mode);
 		GET_INT( submode );
 		GET_USHORT( other_net_signature );
-		if ( mode & (AI_GOAL_DOCK|AI_GOAL_REARM_REPAIR) ) {
+
+		if ( mode == AI_GOAL_DOCK || mode == AI_GOAL_REARM_REPAIR ) {
 			GET_DATA(docker_index);
 			GET_DATA(dockee_index);
 		}
@@ -5257,7 +5274,7 @@ void process_ai_info_update_packet( ubyte *data, header *hinfo)
 		aigp->ai_submode = submode;
 
 		// for docking, add the docker and dockee index to the active goal
-		if ( mode & (AI_GOAL_DOCK|AI_GOAL_REARM_REPAIR) ) {
+		if ( mode == AI_GOAL_DOCK || mode == AI_GOAL_REARM_REPAIR ) {
 			aigp->docker.index = docker_index;
 			aigp->dockee.index = dockee_index;
 			aigp->flags.set(AI::Goal_Flags::Dockee_index_valid);
@@ -6980,7 +6997,8 @@ void process_asteroid_info( ubyte *data, header *hinfo )
 		
 		// if we know the other object is a weapon, then do a weapon hit to kill the weapon
 		if ( other_objp && (other_objp->type == OBJ_WEAPON) ){
-			weapon_hit( other_objp, objp, &hitpos );
+			bool armed = weapon_hit( other_objp, objp, &hitpos );
+			maybe_play_conditional_impacts({}, other_objp, objp, armed, -1, &hitpos);
 		}
 		break;
 	}
@@ -7188,11 +7206,11 @@ void send_client_update_packet(net_player *pl)
 		}
 		ADD_DATA( percent );
 
-		n_quadrants = (ubyte)objp->n_quadrants;
+		n_quadrants = static_cast<ubyte>(objp->shield_quadrant.size());
 		ADD_DATA( n_quadrants );
-		for (i = 0; i < n_quadrants; i++ ) {
-			percent = (ubyte)(objp->shield_quadrant[i] / shield_get_max_quad(objp) * 100.0f);
-
+		float max_quad = shield_get_max_quad(objp);
+		for (float quadrant: objp->shield_quadrant) {
+			percent = static_cast<ubyte>(quadrant / max_quad * 100.0f);
 			ADD_DATA( percent );
 		}
 
@@ -7324,11 +7342,10 @@ void process_client_update_packet(ubyte *data, header *hinfo)
 			fl_val = hull_percent * shipp->ship_max_hull_strength / 100.0f;
 			objp->hull_strength = fl_val;
 
+			float max_quad = shield_get_max_quad(objp);
 			for ( i = 0; i < n_quadrants; i++ ) {
-				if (i < objp->n_quadrants) {
-					fl_val = (shield_percent[i] * shield_get_max_quad(objp) / 100.0f);
-					objp->shield_quadrant[i] = fl_val;
-				}
+				fl_val = (shield_percent[i] * max_quad / 100.0f);
+				objp->shield_quadrant[i] = fl_val;
 			}
 
 			// for sanity, be sure that the number of susbystems that I read in matches the player.  If not,
@@ -8076,8 +8093,8 @@ void process_animation_triggered_packet(ubyte* data, header* hinfo) {
 	if (animation != animation::ModelAnimationSet::s_animationById.end()) {
 		if (special_mode == 0) {
 			//with the above exit condition, this guarantees a non-null objp
-			int model_instance_num = object_get_model_instance(objp);
-			if(model_instance_num > -1)
+			int model_instance_num = object_get_model_instance_num(objp);
+			if (model_instance_num >= 0)
 				animation->second->start(model_get_instance(model_instance_num), direction, forced, instant, pause, &delay);
 		}
 		else {
@@ -8389,7 +8406,7 @@ void process_beam_fired_packet(ubyte *data, header *hinfo)
 			shipp->beam_sys_info.model_num = Ship_info[shipp->ship_info_index].model_num;
 			shipp->beam_sys_info.turret_gun_sobj = pm->detail[0];
 			shipp->beam_sys_info.turret_num_firing_points = 1;
-			shipp->beam_sys_info.turret_fov = cosf((field_of_fire != 0.0f) ? field_of_fire : 180);
+			shipp->beam_sys_info.turret_fov = cosf(fl_radians((field_of_fire != 0.0f) ? field_of_fire : 180.0f) / 2.0f);
 			shipp->beam_sys_info.pnt = fire_info.local_fire_postion;
 			shipp->beam_sys_info.turret_firing_point[0] = fire_info.local_fire_postion;
 
@@ -8618,7 +8635,7 @@ void process_weapon_detonate_packet(ubyte *data, header *hinfo)
 }	
 
 // flak fired packet
-void send_flak_fired_packet(int ship_objnum, int subsys_index, int weapon_objnum, float flak_range)
+void send_flak_fired_packet(int ship_objnum, int subsys_index, int weapon_objnum, float flak_range, float dist_to_target, float target_radius)
 {
 	int packet_size;
 	ushort pnet_signature;
@@ -8666,6 +8683,10 @@ void send_flak_fired_packet(int ship_objnum, int subsys_index, int weapon_objnum
 		ADD_FLOAT(ZERO_VALUE);
 	}
 	ADD_FLOAT( flak_range );
+
+	ADD_FLOAT( dist_to_target );
+
+	ADD_FLOAT( target_radius );
 	
 	multi_io_send_to_all(data, packet_size);
 
@@ -8685,6 +8706,8 @@ void process_flak_fired_packet(ubyte *data, header *hinfo)
 	ship *shipp;
 	float angle1, angle2;
 	float flak_range;
+	float dist_to_target;
+	float target_radius;
 
 	// get the data for the turret fired packet
 	offset = HEADER_LENGTH;		
@@ -8695,6 +8718,8 @@ void process_flak_fired_packet(ubyte *data, header *hinfo)
 	GET_FLOAT( angle1 );
 	GET_FLOAT( angle2 );
 	GET_FLOAT( flak_range );
+	GET_FLOAT( dist_to_target );
+	GET_FLOAT( target_radius );
 	PACKET_SET_SIZE();				// move our counter forward the number of bytes we have read
 
 	// if we don't have a valid weapon index then bail
@@ -8715,7 +8740,7 @@ void process_flak_fired_packet(ubyte *data, header *hinfo)
 	}
 
 	// make an orientation matrix from the o_fvec
-	vm_vector_2_matrix(&orient, &o_fvec, NULL, NULL);
+	vm_vector_2_matrix_norm(&orient, &o_fvec, nullptr, nullptr);
 
 	// find this turret, and set the position of the turret that just fired to be where it fired.  Quite a
 	// hack, but should be suitable.
@@ -8737,18 +8762,39 @@ void process_flak_fired_packet(ubyte *data, header *hinfo)
 	// get the world position of the weapon
 	ship_get_global_turret_info(objp, ssp->system_info, &pos, &dir);
 
+	auto launch_curve_data = WeaponLaunchCurveData {
+		ssp->system_info->turret_num_firing_points,
+		dist_to_target,
+		target_radius,
+	};
+
 	// create the weapon object	
-	weapon_objnum = weapon_create( &pos, &orient, wid, OBJ_INDEX(objp), -1, 1, 0, 0.0f, ssp);
+	weapon_objnum = weapon_create( &pos, &orient, wid, OBJ_INDEX(objp), -1, true, false, 0.0f, ssp, launch_curve_data);
 	if (weapon_objnum != -1) {
-		if ( Weapon_info[wid].launch_snd.isValid() ) {
+		const weapon_info& wip = Weapon_info[wid];
+		if ( wip.launch_snd.isValid() ) {
 			snd_play_3d( gamesnd_get_game_sound(Weapon_info[wid].launch_snd), &pos, &View_position );
 		}
 
-		// create a muzzle flash from a flak gun based upon firing position and weapon type
-		mflash_create(&pos, &dir, &objp->phys_info, Weapon_info[wid].muzzle_flash);
+		object& wp_obj = Objects[weapon_objnum];
+		const weapon& wp = Weapons[wp_obj.instance];
+
+		if (wip.muzzle_effect.isValid()) {
+			float radius_mult = 1.f;
+			if (wip.render_type == WRT_LASER) {
+				radius_mult = wip.weapon_curves.get_output(weapon_info::WeaponCurveOutputs::LASER_RADIUS_MULT, wp, &wp.modular_curves_instance);
+			}
+			//spawn particle effect
+			auto particleSource = particle::ParticleManager::get()->createSource(wip.muzzle_effect);
+			//This could potentially be attached to the ship, but might look weird if the spawn position of the weapon is ever interpolated away from the ship's barrel.
+			particleSource->setHost(make_unique<EffectHostVector>(pos, orient, objp->phys_info.vel));
+			particleSource->setTriggerRadius(wp_obj.radius * radius_mult);
+			particleSource->setTriggerVelocity(vm_vec_mag_quick(&wp_obj.phys_info.vel));
+			particleSource->finishCreation();
+		}
 
 		// set its range explicitly - make it long enough so that it's guaranteed to still exist when the server tells us it blew up
-		flak_set_range(&Objects[weapon_objnum], (float)flak_range);
+		flak_set_range(&wp_obj, (float)flak_range);
 	}
 }
 
@@ -8756,7 +8802,7 @@ void process_flak_fired_packet(ubyte *data, header *hinfo)
 #define GET_NORM_VEC(d) do { char vnorm[3]; memcpy(vnorm, data+offset, 3); d.x = (float)vnorm[0] / 127.0f; d.y = (float)vnorm[1] / 127.0f; d.z = (float)vnorm[2] / 127.0f; } while(false);
 
 // player pain packet
-void send_player_pain_packet(net_player *pl, int weapon_info_index, float damage, vec3d *force, vec3d *hitpos, int quadrant_num)
+void send_player_pain_packet(net_player *pl, int weapon_info_index, float damage, const vec3d *force, const vec3d *hitpos, int quadrant_num)
 {
 	ubyte data[MAX_PACKET_SIZE];
 	short windex;
@@ -8788,7 +8834,7 @@ void send_player_pain_packet(net_player *pl, int weapon_info_index, float damage
 	multi_rate_add(1, "pai", packet_size);
 }	
 
-void process_player_pain_packet(ubyte *data, header *hinfo)
+void process_player_pain_packet(const ubyte *data, header *hinfo)
 {
 	int offset;
 	short windex = 0;

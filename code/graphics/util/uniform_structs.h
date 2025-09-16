@@ -189,22 +189,13 @@ struct decal_globals {
 };
 
 struct decal_info {
-	matrix4 model_matrix;
-	matrix4 inv_model_matrix;
-
-	vec3d decal_direction;
-	float normal_angle_cutoff;
-
 	int diffuse_index;
 	int glow_index;
 	int normal_index;
-	float angle_fade_start;
-
-	float alpha_scale;
 	int diffuse_blend_mode;
-	int glow_blend_mode;
 
-	float pad;
+	int glow_blend_mode;
+	float pad[3];
 };
 
 struct matrix_uniforms {
@@ -319,10 +310,13 @@ struct volumetric_fog_data {
 	float stepsize;
 	
 	vec3d nebPos;
-	float globalstepalpha;
+	float opacitydistance;
 	
 	vec3d nebSize;
 	float alphalimit;
+
+	float nebColor[3];
+	float udfScale;
 	
 	float emissiveSpreadFactor;
 	float emissiveIntensity;

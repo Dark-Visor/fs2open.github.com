@@ -14,8 +14,8 @@
 #include "ship/ship.h"        //compute_slew_matrix
 
 //*************************IMPORTANT GLOBALS*************************
-fov_t VIEWER_ZOOM_DEFAULT = 0.75f;			//	Default viewer zoom, 0.625 as per multi-lateral agreement on 3/24/97
-fov_t COCKPIT_ZOOM_DEFAULT = 0.75f;
+fov_t VIEWER_ZOOM_DEFAULT = DEFAULT_FOV;
+fov_t COCKPIT_ZOOM_DEFAULT = DEFAULT_FOV;
 float Sexp_fov = 0.0f;
 warp_camera Warp_camera;
 
@@ -48,11 +48,14 @@ struct apply_##name##_to_fov { \
 	} \
 }; \
 fov_t operator op (const fov_t& zoom, const float& scale) { \
-	return mpark::visit(apply_##name##_to_fov{scale}, zoom); \
+	return std::visit(apply_##name##_to_fov{scale}, zoom); \
 }
 APPLY_TO_FOV_T(*, mul)
 APPLY_TO_FOV_T(+, add)
 APPLY_TO_FOV_T(-, sub)
+
+// Used to set the default value for in-game options
+static float fov_default = DEFAULT_FOV;
 
 static SCP_string fov_display(float val)
 {
@@ -61,19 +64,66 @@ static SCP_string fov_display(float val)
 	sprintf(out, u8"%.1f\u00B0", degrees);
 	return out;
 }
+
+static void parse_fov_func()
+{
+	float value;
+	stuff_float(&value);
+	CLAMP(value, 0.436332f, 1.5708f);
+	fov_default = value;
+}
+
 auto FovOption = options::OptionBuilder<float>("Graphics.FOV",
 					 std::pair<const char*, int>{"Field Of View", 1703},
 					 std::pair<const char*, int>{"The vertical field of view", 1704})
-					 .category("Graphics")
+					 .category(std::make_pair("Graphics", 1825))
 					 .range(0.436332f, 1.5708f)
 					 .change_listener([](const float& val, bool) {
 					      VIEWER_ZOOM_DEFAULT = val;
 					      return true;
 					 })
 					 .display(fov_display)
-					 .default_val(0.75f)
+					 .default_func([]() { return fov_default; })
 					 .level(options::ExpertLevel::Advanced)
 					 .importance(60)
+					 .parser(parse_fov_func)
+					 .finish();
+
+bool Use_cockpit_fov = false;
+
+auto CockpitFOVToggleOption = options::OptionBuilder<bool>("Graphics.CockpitFOVToggle",
+					 std::pair<const char*, int>{"Cockpit FOV Toggle", 1838},
+					 std::pair<const char*, int>{"Whether or not to use a different FOV for cockpit rendering from normal rendering", 1839})
+					 .category(std::make_pair("Graphics", 1825))
+					 .default_val(false)
+					 .change_listener([](bool val, bool) {
+					      if (!val) {
+					           COCKPIT_ZOOM_DEFAULT = VIEWER_ZOOM_DEFAULT;
+					      }
+					      return true; // This option will always persist so we never return false
+					 })
+					 .level(options::ExpertLevel::Advanced)
+					 .bind_to(&Use_cockpit_fov)
+					 .importance(61)
+					 .finish();
+
+auto CockpitFovOption = options::OptionBuilder<float>("Graphics.CockpitFOV",
+					 std::pair<const char*, int>{"Cockpit Field Of View", 1840},
+					 std::pair<const char*, int>{"The vertical field of view for cockpit rendering. Only works if cockpits are active and cockpit FOV toggle is turned on.", 1841})
+					 .category(std::make_pair("Graphics", 1825))
+					 .range(0.436332f, 1.5708f)
+					 .change_listener([](const float& val, bool) {
+					      if (Use_cockpit_fov){
+					           COCKPIT_ZOOM_DEFAULT = val;
+						  } else {
+							  COCKPIT_ZOOM_DEFAULT = VIEWER_ZOOM_DEFAULT;
+						  }
+					      return true;
+					 })
+					 .display(fov_display)
+					 .default_val(fov_default)
+					 .level(options::ExpertLevel::Advanced)
+					 .importance(62)
 					 .finish();
 
 //*************************CLASS: camera*************************
@@ -160,24 +210,34 @@ void camera::set_object_host(object *objp, int n_object_host_submodel)
 	object_host_submodel = n_object_host_submodel;
 	set_custom_position_function(NULL);
 	set_custom_orientation_function(NULL);
-	if(n_object_host_submodel > 0)
+
+	if (n_object_host_submodel >= 0 && objp != nullptr && objp->type == OBJ_SHIP) 
 	{
-		if(objp != nullptr && objp->type == OBJ_SHIP)
+		ship_subsys* ssp = GET_FIRST(&Ships[objp->instance].subsys_list);
+		while (ssp != END_OF_LIST(&Ships[objp->instance].subsys_list)) 
 		{
-			ship_subsys* ssp = GET_FIRST(&Ships[objp->instance].subsys_list);
-			while ( ssp != END_OF_LIST( &Ships[objp->instance].subsys_list ) )
+			if (ssp->system_info->subobj_num == n_object_host_submodel) 
 			{
-				if(ssp->system_info->subobj_num == n_object_host_submodel)
+				if (ssp->system_info->type == SUBSYSTEM_TURRET) 
 				{
-					if(ssp->system_info->type == SUBSYSTEM_TURRET)
-					{
-						set_custom_position_function(get_turret_cam_pos);
-						set_custom_orientation_function(get_turret_cam_orient);
-					}
+					set_custom_position_function(get_turret_cam_pos);
+					set_custom_orientation_function(get_turret_cam_orient);
 				}
-				ssp = GET_NEXT( ssp );
 			}
+			ssp = GET_NEXT(ssp);
 		}
+	}
+	else if (Use_model_eyepoint_for_set_camera_host && object_host.isValid()) 
+	{
+		const object* host = object_host.objp();
+
+		vec3d eye_pos;
+		matrix eye_orient;
+
+		object_get_eye(&eye_pos, &eye_orient, host, false, true, true);
+
+		set_position(&eye_pos);
+		set_rotation(&eye_orient);
 	}
 }
 
@@ -297,11 +357,11 @@ void camera::set_rotation_facing(vec3d *in_target, float in_rotation_time, float
 		if (Use_host_orientation_for_set_camera_facing)
 		{
 			// point along the target vector, but using the host orient's roll
-			vm_vector_2_matrix(&temp_matrix, &targetvec, &orient->vec.uvec, nullptr);
+			vm_vector_2_matrix_norm(&temp_matrix, &targetvec, &orient->vec.uvec, nullptr);
 
 			// if we have a host, we need the difference between the camera's current orient and the orient we want
 			// if not, we will later set the absolute orientation, rather than the orientation relative to the host
-			if (object_host.IsValid())
+			if (object_host.isValid())
 			{
 				vm_transpose(orient);
 				temp_matrix = temp_matrix * *orient;
@@ -310,7 +370,7 @@ void camera::set_rotation_facing(vec3d *in_target, float in_rotation_time, float
 		else
 		{
 			// point directly along the target vector
-			vm_vector_2_matrix(&temp_matrix, &targetvec, nullptr, nullptr);
+			vm_vector_2_matrix_norm(&temp_matrix, &targetvec, nullptr, nullptr);
 		}
 	}
 
@@ -324,10 +384,7 @@ void camera::do_frame(float  /*in_frametime*/)
 
 object *camera::get_object_host()
 {
-	if(object_host.IsValid())
-		return object_host.objp;
-	else
-		return NULL;
+	return object_host.objp_or_null();
 }
 
 int camera::get_object_host_submodel()
@@ -337,10 +394,7 @@ int camera::get_object_host_submodel()
 
 object *camera::get_object_target()
 {
-	if(object_target.IsValid())
-		return object_target.objp;
-	else
-		return NULL;
+	return object_target.objp_or_null();
 }
 
 int camera::get_object_target_submodel()
@@ -373,7 +427,7 @@ void camera::get_info(vec3d *position, matrix *orientation, bool apply_camera_or
 	bool use_host_orient = false;
 
 	//POSITION
-	if(!(flags & CAM_STATIONARY_POS) || object_host.IsValid())
+	if(!(flags & CAM_STATIONARY_POS) || object_host.isValid())
 	{
 		c_pos = vmd_zero_vector;
 
@@ -382,24 +436,16 @@ void camera::get_info(vec3d *position, matrix *orientation, bool apply_camera_or
 		pos_y.get(&pt.xyz.y, NULL);
 		pos_z.get(&pt.xyz.z, NULL);
 
-		if(object_host.IsValid())
+		if(object_host.isValid())
 		{
-			object *objp = object_host.objp;
-			int model_num = object_get_model(objp);
-			polymodel *pm = nullptr;
-			polymodel_instance *pmi = nullptr;
-			
-			if(model_num >= 0)
-			{
-				pm = model_get(model_num);
-				if (objp->type == OBJ_SHIP)
-					pmi = model_get_instance(Ships[objp->instance].model_instance_num);
-			}
+			object *objp = object_host.objp();
+			polymodel *pm = object_get_model(objp);
+			polymodel_instance *pmi = object_get_model_instance(objp);
 
 			if(object_host_submodel < 0 || pm == NULL)
 			{
-				vm_vec_unrotate(&c_pos, &pt, &object_host.objp->orient);
-				vm_vec_add2(&c_pos, &object_host.objp->pos);
+				vm_vec_unrotate(&c_pos, &pt, &object_host.objp()->orient);
+				vm_vec_add2(&c_pos, &object_host.objp()->pos);
 			}
 			else
 			{
@@ -444,23 +490,14 @@ void camera::get_info(vec3d *position, matrix *orientation, bool apply_camera_or
 	if(orientation != NULL)
 	{
 		bool target_set = false;
-		if(!(flags & CAM_STATIONARY_ORI) || object_target.IsValid() || object_host.IsValid())
+		if(!(flags & CAM_STATIONARY_ORI) || object_target.isValid() || object_host.isValid())
 		{
-			if(object_target.IsValid())
+			if(object_target.isValid())
 			{
-				object *target_objp = object_target.objp;
-				int model_num = object_get_model(target_objp);
-				polymodel *target_pm = nullptr;
-				polymodel_instance *target_pmi = nullptr;
+				object *target_objp = object_target.objp();
+				polymodel *target_pm = object_get_model(target_objp);
+				polymodel_instance *target_pmi = object_get_model_instance(target_objp);
 				vec3d target_pos = vmd_zero_vector;
-				
-				//See if we can get the model
-				if(model_num >= 0)
-				{
-					target_pm = model_get(model_num);
-					if (target_objp->type == OBJ_SHIP)
-						target_pmi = model_get_instance(Ships[target_objp->instance].model_instance_num);
-				}
 
 				//If we don't have a submodel or don't have the model use object pos
 				//Otherwise, find the submodel pos as it is rotated
@@ -478,14 +515,14 @@ void camera::get_info(vec3d *position, matrix *orientation, bool apply_camera_or
 
 				vec3d targetvec;
 				vm_vec_normalized_dir(&targetvec, &target_pos, &c_pos);
-				vm_vector_2_matrix(&c_ori, &targetvec, NULL, NULL);
+				vm_vector_2_matrix_norm(&c_ori, &targetvec, nullptr, nullptr);
 				target_set = true;
 			}
-			else if(object_host.IsValid())
+			else if(object_host.isValid())
 			{
 				if(eyep)
 				{
-					vm_vector_2_matrix(&c_ori, &host_normal, vm_vec_same(&host_normal, &object_host.objp->orient.vec.uvec)?NULL:&object_host.objp->orient.vec.uvec, NULL);
+					vm_vector_2_matrix_norm(&c_ori, &host_normal, vm_vec_same(&host_normal, &object_host.objp()->orient.vec.uvec) ? nullptr : &object_host.objp()->orient.vec.uvec, nullptr);
 					target_set = true;
 				}
 				else if (use_host_orient)
@@ -494,7 +531,7 @@ void camera::get_info(vec3d *position, matrix *orientation, bool apply_camera_or
 				}
 				else
 				{
-					c_ori = object_host.objp->orient;
+					c_ori = object_host.objp()->orient;
 				}
 			}
 			else
@@ -541,7 +578,7 @@ warp_camera::warp_camera(object *objp)
 
 	vec3d object_pos = objp->pos;
 	matrix tmp;
-	ship_get_eye(&object_pos, &tmp, objp);
+	object_get_eye(&object_pos, &tmp, objp);
 
 	vm_vec_scale_add2( &object_pos, &Player_obj->orient.vec.rvec, 0.0f );
 	vm_vec_scale_add2( &object_pos, &Player_obj->orient.vec.uvec, 0.952f );
@@ -754,7 +791,7 @@ subtitle::subtitle(int in_x_pos, int in_y_pos, const char* in_text, const char* 
 		//Get text size
 		for(int i = 0; i < num_text_lines; i++)
 		{
-			gr_get_string_size(&w, &h, text_line_ptrs[i], text_line_lens[i]);
+			gr_get_string_size(&w, &h, text_line_ptrs[i], 1.0f, static_cast<size_t>(text_line_lens[i]));
 
 			if(w > tw)
 				tw = w;
@@ -1011,7 +1048,7 @@ int camid::getSignature()
 	return sig;
 }
 
-bool camid::isValid()
+bool camid::isValid() const
 {
 	if(idx >= Cameras.size())
 		return false;
@@ -1046,13 +1083,6 @@ int cam_get_next_sig()
 {
 	static int next_sig = 0;
 	return next_sig++;
-}
-
-camid cam_create(const char *n_name, vec3d *n_pos, vec3d *n_norm, object *n_object, int n_object_host_submodel)
-{
-	matrix ori;
-	vm_vector_2_matrix_norm(&ori, n_norm);
-	return cam_create(n_name, n_pos, &ori, n_object, n_object_host_submodel);
 }
 
 camid cam_create(const char *n_name, vec3d *n_pos, matrix *n_ori, object *n_object, int n_object_host_submodel)
@@ -1198,12 +1228,12 @@ void subtitles_do_frame_post_shaded(float frametime)
 	}
 }
 
-vec3d normal_cache;
+static vec3d normal_cache;
 
 void get_turret_cam_pos(camera *cam, vec3d *pos)
 {
 	object_h obj(cam->get_object_host());
-	if(!obj.IsValid())
+	if(!obj.isValid())
 		return;
 	ship* shipp = &Ships[cam->get_object_host()->instance];
 	ship_subsys* ssp = GET_FIRST(&shipp->subsys_list);
@@ -1224,9 +1254,9 @@ void get_turret_cam_pos(camera *cam, vec3d *pos)
 void get_turret_cam_orient(camera *cam, matrix *ori)
 {
 	object_h obj(cam->get_object_host());
-	if(!obj.IsValid())
+	if(!obj.isValid())
 		return;
-	vm_vector_2_matrix(ori, &normal_cache, vm_vec_same(&normal_cache, &cam->get_object_host()->orient.vec.uvec)?NULL:&cam->get_object_host()->orient.vec.uvec, NULL);
+	vm_vector_2_matrix_norm(ori, &normal_cache, vm_vec_same(&normal_cache, &cam->get_object_host()->orient.vec.uvec) ? nullptr : &cam->get_object_host()->orient.vec.uvec, nullptr);
 }
 
 eye* get_submodel_eye(polymodel *pm, int submodel_num)
@@ -1263,8 +1293,10 @@ float cam_get_bbox_dist(const object* viewer_obj, float preferred_distance, cons
 	if (preferred_distance > (viewer_obj->radius * EXTERN_CAM_BBOX_MULTIPLIER_PADDING + EXTERN_CAM_BBOX_CONSTANT_PADDING) * 1.5f) 
 		return preferred_distance;
 	
-	int modelnum = object_get_model(viewer_obj);
-	polymodel* pm = model_get(modelnum);
+	polymodel* pm = object_get_model(viewer_obj);
+	if (pm == nullptr)
+		return preferred_distance;
+
 	vec3d adjusted_bbox;
 	const vec3d* cam_vec = &cam_orient->vec.fvec;
 

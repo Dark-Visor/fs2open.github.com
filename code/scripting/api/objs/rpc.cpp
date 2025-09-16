@@ -46,7 +46,7 @@ ADE_FUNC(__newindex, l_RPC, "function(any arg) => void rpc_body", "Sets the func
 	if (rpc == nullptr)
 		return ade_set_error(L, "b", false);
 
-	rpc->func = func;
+	rpc->func = std::move(func);
 
 	return ade_set_args(L, "u", rpc->func);
 }
@@ -65,7 +65,7 @@ ADE_FUNC(__call, l_RPC, "[any = nil, enumeration recipient = default /* as set o
 	if(!argument.isValid())
 		argument = luacpp::LuaValue::createNil(L);
 
-	if (!recipient.IsValid() || (recipient.index != LE_RPC_SERVER && recipient.index != LE_RPC_CLIENTS && recipient.index != LE_RPC_BOTH))
+	if (!recipient.isValid() || (recipient.index != LE_RPC_SERVER && recipient.index != LE_RPC_CLIENTS && recipient.index != LE_RPC_BOTH))
 		recipient = rpc->recipient;
 
 	lua_net_reciever recipient_lua;

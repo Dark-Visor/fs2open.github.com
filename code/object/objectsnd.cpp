@@ -63,12 +63,12 @@ UI_TIMESTAMP	Obj_snd_last_update;							// timer used to run object sound update
 int		Obj_snd_level_inited=0;
 
 // ship flyby data
-#define	FLYBY_MIN_DISTANCE				90
-#define	FLYBY_MIN_RELATIVE_SPEED		100
-#define	FLYBY_MIN_NEXT_TIME				1000	// in ms
-#define	FLYBY_MIN_REPEAT_TIME			4000	// in ms
-int		Flyby_next_sound;
-int		Flyby_next_repeat;
+constexpr int FLYBY_MIN_DISTANCE       = 90;
+constexpr int FLYBY_MIN_RELATIVE_SPEED = 100;
+constexpr int FLYBY_MIN_NEXT_TIME      = 1 * MILLISECONDS_PER_SECOND;	// in ms
+constexpr int FLYBY_MIN_REPEAT_TIME    = 4 * MILLISECONDS_PER_SECOND;	// in ms
+static TIMESTAMP Flyby_next_sound;
+static TIMESTAMP Flyby_next_repeat;
 object	*Flyby_last_objp;
 
 // return the world pos of the sound source on a ship.  
@@ -209,8 +209,8 @@ void obj_snd_level_init()
 	}
 
 	Num_obj_sounds_playing = 0;
-	Flyby_next_sound = 1;
-	Flyby_next_repeat = 1;
+	Flyby_next_sound = TIMESTAMP::immediate();
+	Flyby_next_repeat = TIMESTAMP::immediate();
 	Flyby_last_objp = NULL;
 	Obj_snd_last_update = ui_timestamp();
 
@@ -388,7 +388,7 @@ void maybe_play_flyby_snd(float closest_dist, object *closest_objp, object *list
 
 				if ( closest_objp == Flyby_last_objp ) {
 					if ( timestamp_elapsed(Flyby_next_repeat) ) {
-						Flyby_next_repeat = timestamp(FLYBY_MIN_REPEAT_TIME);
+						Flyby_next_repeat = _timestamp(FLYBY_MIN_REPEAT_TIME);
 					}
 					else 
 						return;
@@ -428,7 +428,7 @@ void maybe_play_flyby_snd(float closest_dist, object *closest_objp, object *list
 
 				joy_ff_fly_by(100 - (int) (100.0f * closest_dist / FLYBY_MIN_DISTANCE));
 
-				Flyby_next_sound = timestamp(FLYBY_MIN_NEXT_TIME);
+				Flyby_next_sound = _timestamp(FLYBY_MIN_NEXT_TIME);
 				Flyby_last_objp = closest_objp;
 			}
 		}
@@ -446,7 +446,6 @@ void obj_snd_do_frame()
 	obj_snd			*osp;
 	object			*objp, *closest_objp;
 	game_snd			*gs;
-	ship				*sp;
 	int				channel;
 	vec3d			source_pos;
 	float				add_distance;
@@ -487,6 +486,8 @@ void obj_snd_do_frame()
 			continue;
 		}
 
+		bool obj_is_ship = (objp->type == OBJ_SHIP);
+
 		obj_snd_source_pos(&source_pos, osp);
 		distance = vm_vec_dist_quick( &source_pos, &View_position );
 
@@ -502,7 +503,7 @@ void obj_snd_do_frame()
 		}
 
 		// save closest distance (used for flyby sound) if this is a small ship (and not the observer)
-		if ( (objp->type == OBJ_SHIP) && (distance < closest_dist) && (objp != observer_obj) ) {
+		if ( (obj_is_ship) && (distance < closest_dist) && (objp != observer_obj) ) {
 			if ( Ship_info[Ships[objp->instance].ship_info_index].is_small_ship() ) {
 				closest_dist = distance;
 				closest_objp = objp;
@@ -512,12 +513,12 @@ void obj_snd_do_frame()
 		speed_vol_multiplier = 1.0f;
 		rot_vol_mult = 1.0f;
 		alive_vol_mult = 1.0f;
-		if ( objp->type == OBJ_SHIP ) {
+		if ( obj_is_ship ) {
 			ship_info *sip = &Ship_info[Ships[objp->instance].ship_info_index];
 
 			// we don't want to start the engine sound unless the ship is
 			// moving (unless flag SIF_BIG_SHIP is set)
-			if ( (osp->flags & OS_ENGINE) && !(sip->is_big_or_huge()) ) {
+			if ( (osp->flags & OS_ENGINE) && (!(sip->is_big_or_huge()) || Unify_minimum_engine_sound) ) {
 				if ( objp->phys_info.max_vel.xyz.z <= 0.0f ) {
 					percent_max = 0.0f;
 				}
@@ -658,15 +659,21 @@ void obj_snd_do_frame()
 		if (!osp->instance.isValid())
 			continue;
 
-		sp = nullptr;
-		if ( objp->type == OBJ_SHIP )
+		bool sound_allowed = true;
+		ship* sp = nullptr; 
+		if (obj_is_ship) {
 			sp = &Ships[objp->instance];
-
+			if (osp->flags & OS_ENGINE) {
+				bool disabled_and_silent = Disabled_or_disrupted_engines_silent && 
+				                           (sp->flags[Ship::Ship_Flags::Disabled] || ship_subsys_disrupted(sp, SUBSYSTEM_ENGINE));
+				sound_allowed = (sp->flags[Ship::Ship_Flags::Engine_sound_on]) && !disabled_and_silent;
+			}
+		}
 
 		channel = ds_get_channel(osp->instance);
 		// for DirectSound3D sounds, re-establish the maximum speed based on the
 		//	speed_vol_multiplier
-		if ( (sp == nullptr) || !(osp->flags & OS_ENGINE) || (sp->flags[Ship::Ship_Flags::Engines_on]) ) {
+		if ( sound_allowed ) {
 			snd_set_volume( osp->instance, gs->volume_range.next() *speed_vol_multiplier*rot_vol_mult*alive_vol_mult );
 		}
 		else {
@@ -677,7 +684,7 @@ void obj_snd_do_frame()
 		vec3d vel = objp->phys_info.vel;
 
 		// Don't play doppler effect for cruisers or capitals
-		if ( sp ) {
+		if (obj_is_ship) {
 			if ( Ship_info[sp->ship_info_index].is_big_or_huge() ) {
 				vel = vmd_zero_vector;
 			}

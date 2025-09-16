@@ -112,7 +112,7 @@ public:
 	void addPending(const char *text, int source, int x = 0);
 	void scrollMessages();
 	void preprocess() override;
-	void render(float frametime) override;
+	void render(float frametime, bool config = false) override;
 	void initialize() override;
 	void pageIn() override;
 };
@@ -135,9 +135,9 @@ public:
 	void initAnimOffsets(int x, int y);
 	void initAnimSizes(int w, int h);
 	void pageIn() override;
-	void render(float frametime) override;
+	void render(float frametime, bool config = false) override;
 	void initialize() override;
-	bool canRender() override;
+	bool canRender() const override;
 };
 
 class HudGaugeFixedMessages: public HudGauge
@@ -146,7 +146,7 @@ class HudGaugeFixedMessages: public HudGauge
 public:
 	HudGaugeFixedMessages();
 	void initCenterText(bool center);
-	void render(float frametime) override;
+	void render(float frametime, bool config = false) override;
 	void pageIn() override;
 };
 

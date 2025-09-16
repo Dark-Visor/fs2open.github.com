@@ -28,16 +28,16 @@ void CommandBriefingDialogModel::initializeData()
 		strcpy_s(_wipCommandBrief.background[1], "<default>");
 	}
 
-	if (_wipCommandBrief.num_stages <= 0) {
-		_currentStage = 0;
-	} else {
-		_currentStage = 1;
-	}
+	_currentStage = 0;
 
 	int i;
 
 	for (i = 0; i < _wipCommandBrief.num_stages; i++) {
 		_wipCommandBrief.stage[i] = Cur_cmd_brief->stage[i];
+		strcpy_s(_wipCommandBrief.stage[i].ani_filename, Cur_cmd_brief->stage[i].ani_filename);
+		_wipCommandBrief.stage[i].text = Cur_cmd_brief->stage[i].text;
+		_wipCommandBrief.stage[i].wave = Cur_cmd_brief->stage[i].wave;
+		strcpy_s(_wipCommandBrief.stage[i].wave_filename, Cur_cmd_brief->stage[i].wave_filename);
 	}
 
 	for (i = _wipCommandBrief.num_stages; i < CMD_BRIEF_STAGES_MAX; i++) {
@@ -47,7 +47,7 @@ void CommandBriefingDialogModel::initializeData()
 		strcpy_s(_wipCommandBrief.stage[i].wave_filename, "none");
 	}
 
-	_briefingTextUpdateRequired = false;
+	_briefingTextUpdateRequired = true;
 	_stageNumberUpdateRequired = true; // always need to start off setting the correct stage.
 	_soundTestUpdateRequired = true;
 	_currentlyPlayingSound = -1;
@@ -67,18 +67,10 @@ bool CommandBriefingDialogModel::apply()
 
 	int i = 0;
 
-	for (i = 0; i < _wipCommandBrief.num_stages; i++) {
+	for (i = 0; i < CMD_BRIEF_STAGES_MAX; i++) {
 		Cur_cmd_brief->stage[i] =_wipCommandBrief.stage[i];
-	}
-
-	for (i = _wipCommandBrief.num_stages; i < CMD_BRIEF_STAGES_MAX; i++) {
-		Cur_cmd_brief->stage[i].ani_filename[0] = 0;
-		Cur_cmd_brief->stage[i].text.clear();
 		audiostream_close_file(_wipCommandBrief.stage[i].wave, false);
-		Cur_cmd_brief->stage[i].wave = -1;
 	}
-
-	_wipCommandBrief.num_stages = 0;
 
 	return true;
 }
@@ -152,7 +144,7 @@ void CommandBriefingDialogModel::addStage()
 
 	_wipCommandBrief.num_stages++;
 	_currentStage = _wipCommandBrief.num_stages - 1;
-	
+	set_modified();
 	modelChanged();
 }
 
@@ -163,6 +155,7 @@ void CommandBriefingDialogModel::insertStage()
 
 	if (_wipCommandBrief.num_stages >= CMD_BRIEF_STAGES_MAX) {
 		_wipCommandBrief.num_stages = CMD_BRIEF_STAGES_MAX;
+		set_modified();
 		modelChanged(); // signal that the model has changed, in case of inexplicable invalid index.
 		return;
 	}
@@ -172,6 +165,7 @@ void CommandBriefingDialogModel::insertStage()
 	for (int i = _wipCommandBrief.num_stages - 1; i > _currentStage; i--) {
 		_wipCommandBrief.stage[i] = _wipCommandBrief.stage[i - 1];
 	}
+	set_modified();
 	modelChanged();
 }
 
@@ -189,6 +183,7 @@ void CommandBriefingDialogModel::deleteStage()
 		_wipCommandBrief.stage[0].wave = -1;
 		memset(_wipCommandBrief.stage[0].wave_filename, 0, CF_MAX_FILENAME_LENGTH);
 		memset(_wipCommandBrief.stage[0].ani_filename, 0, CF_MAX_FILENAME_LENGTH);
+		set_modified();
 		modelChanged();
 		return;
 	}
@@ -301,13 +296,15 @@ int CommandBriefingDialogModel::getSpeechInstanceNumber()
 
 void CommandBriefingDialogModel::setBriefingText(const SCP_string& briefingText) 
 { 
-	_wipCommandBrief.stage[_currentStage].text = briefingText; 
+	_wipCommandBrief.stage[_currentStage].text = briefingText;
+	set_modified();
 	modelChanged(); 
 }
 
 void CommandBriefingDialogModel::setAnimationFilename(const SCP_string& animationFilename) 
 { 
-	strcpy_s(_wipCommandBrief.stage[_currentStage].ani_filename, animationFilename.c_str()); 
+	strcpy_s(_wipCommandBrief.stage[_currentStage].ani_filename, animationFilename.c_str());
+	set_modified();
 	modelChanged(); 
 }
 
@@ -315,30 +312,35 @@ void CommandBriefingDialogModel::setSpeechFilename(const SCP_string& speechFilen
 { 
 	_soundTestUpdateRequired = true; 
 	strcpy_s(_wipCommandBrief.stage[_currentStage].wave_filename, speechFilename.c_str());
-	setWaveID(); 
+	setWaveID();
+	set_modified();
 	modelChanged(); 
 }
 
 void CommandBriefingDialogModel::setCurrentTeam(const ubyte& teamIn) 
 { 
 	_currentTeam = teamIn;
+	set_modified();
 }; // not yet fully supported
 
 void CommandBriefingDialogModel::setLowResolutionFilename(const SCP_string& lowResolutionFilename) 
 { 
 	strcpy_s(_wipCommandBrief.background[0], lowResolutionFilename.c_str()); 
+	set_modified();
 	modelChanged();  
 }
 
 void CommandBriefingDialogModel::setHighResolutionFilename(const SCP_string& highResolutionFilename) 
 { 
 	strcpy_s(_wipCommandBrief.background[1], highResolutionFilename.c_str()); 
+	set_modified();
 	modelChanged(); 
 }
 
 void CommandBriefingDialogModel::requestInitialUpdate() 
 { 
-	_briefingTextUpdateRequired = true;  
+	initializeData();
+	modelChanged();
 }
 
 

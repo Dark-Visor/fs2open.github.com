@@ -245,29 +245,29 @@ const char *xwi_determine_base_ship_class(const XWMFlightGroup *fg)
 		case XWMFlightGroupType::fg_TIE_Bomber:
 			return "TIE/sa Bomber";
 		case XWMFlightGroupType::fg_Gunboat:
-			return nullptr;
+			return "XG-1 Star Wing";
 		case XWMFlightGroupType::fg_Transport:
 			return "DX-9 Stormtrooper Transport";
 		case XWMFlightGroupType::fg_Shuttle:
-			return "Lambda-class T-4a Shuttle";
+			return "Lambda T-4a Shuttle";
 		case XWMFlightGroupType::fg_Tug:
-			return "DV-3 Cargo Freighter";
+			return "DV-3 Freighter";
 		case XWMFlightGroupType::fg_Container:
 			return "BFF-1 Container";
 		case XWMFlightGroupType::fg_Freighter:
-			return "BFF-1 Bulk Freighter";
+			return "BFF-1 Freighter";
 		case XWMFlightGroupType::fg_Calamari_Cruiser:
 			return "Liberty Type Star Cruiser";
 		case XWMFlightGroupType::fg_Nebulon_B_Frigate:
-			return "EF76 Nebulon-B Escort Frigate";
+			return "Nebulon-B Frigate";
 		case XWMFlightGroupType::fg_Corellian_Corvette:
-			return "CR90 Corvette";
+			return "CR90 Corvette#Reb";
 		case XWMFlightGroupType::fg_Imperial_Star_Destroyer:
 			return "Imperial Star Destroyer";
 		case XWMFlightGroupType::fg_TIE_Advanced:
 			return nullptr;
 		case XWMFlightGroupType::fg_B_Wing:
-			return "B-wing Starfighter";
+			return "ASF-01 B-wing";
 		default:
 			break;
 	}
@@ -513,18 +513,18 @@ void parse_xwi_flightgroup(mission *pm, const XWingMission *xwim, const XWMFligh
 
 		wingp->arrival_cue = arrival_cue;
 		wingp->arrival_delay = fg->arrivalDelay;
-		wingp->arrival_location = fg->arriveByHyperspace ? ARRIVE_AT_LOCATION : ARRIVE_FROM_DOCK_BAY;
+		wingp->arrival_location = fg->arriveByHyperspace ? ArrivalLocation::AT_LOCATION : ArrivalLocation::FROM_DOCK_BAY;
 		wingp->arrival_anchor = xwi_determine_anchor(xwim, fg);
 		wingp->departure_cue = Locked_sexp_false;
-		wingp->departure_location = fg->departByHyperspace ? DEPART_AT_LOCATION : DEPART_AT_DOCK_BAY;
+		wingp->departure_location = fg->departByHyperspace ? DepartureLocation::AT_LOCATION : DepartureLocation::TO_DOCK_BAY;
 		wingp->departure_anchor = wingp->arrival_anchor;
 
 		// if a wing doesn't have an anchor, make sure it is at-location
 		// (flight groups present at mission start will have arriveByHyperspace set to false)
 		if (wingp->arrival_anchor < 0)
-			wingp->arrival_location = ARRIVE_AT_LOCATION;
+			wingp->arrival_location = ArrivalLocation::AT_LOCATION;
 		if (wingp->departure_anchor < 0)
-			wingp->departure_location = DEPART_AT_LOCATION;
+			wingp->departure_location = DepartureLocation::AT_LOCATION;
 
 		wingp->wave_count = number_in_wave;
 	}
@@ -604,18 +604,18 @@ void parse_xwi_flightgroup(mission *pm, const XWingMission *xwim, const XWMFligh
 
 			pobj.arrival_cue = arrival_cue;
 			pobj.arrival_delay = fg->arrivalDelay;
-			pobj.arrival_location = fg->arriveByHyperspace ? ARRIVE_AT_LOCATION : ARRIVE_FROM_DOCK_BAY;
+			pobj.arrival_location = fg->arriveByHyperspace ? ArrivalLocation::AT_LOCATION : ArrivalLocation::FROM_DOCK_BAY;
 			pobj.arrival_anchor = xwi_determine_anchor(xwim, fg);
 			pobj.departure_cue = Locked_sexp_false;
-			pobj.departure_location = fg->departByHyperspace ? DEPART_AT_LOCATION : DEPART_AT_DOCK_BAY;
+			pobj.departure_location = fg->departByHyperspace ? DepartureLocation::AT_LOCATION : DepartureLocation::TO_DOCK_BAY;
 			pobj.departure_anchor = pobj.arrival_anchor;
 
 			// if a ship doesn't have an anchor, make sure it is at-location
 			// (flight groups present at mission start will have arriveByHyperspace set to false)
 			if (pobj.arrival_anchor < 0)
-				pobj.arrival_location = ARRIVE_AT_LOCATION;
+				pobj.arrival_location = ArrivalLocation::AT_LOCATION;
 			if (pobj.departure_anchor < 0)
-				pobj.departure_location = DEPART_AT_LOCATION;
+				pobj.departure_location = DepartureLocation::AT_LOCATION;
 		}
 
 		pobj.ship_class = ship_class;
@@ -648,7 +648,7 @@ void parse_xwi_flightgroup(mission *pm, const XWingMission *xwim, const XWMFligh
 			// undo any previously set player
 			if (Player_starts > 0)
 			{
-				auto prev_player_pobjp = mission_parse_get_parse_object(Player_start_shipname);
+				auto prev_player_pobjp = mission_parse_find_parse_object(Player_start_shipname);
 				if (prev_player_pobjp)
 				{
 					Warning(LOCATION, "This mission specifies multiple player starting ships.  Skipping %s.", Player_start_shipname);
@@ -1018,9 +1018,9 @@ void parse_xwi_objectgroup(mission *pm, const XWingMission *xwim, const XWMObjec
 			pobj.ship_class = ship_class;
 
 			pobj.arrival_cue = Locked_sexp_true;
-			pobj.arrival_location = ARRIVE_AT_LOCATION;
+			pobj.arrival_location = ArrivalLocation::AT_LOCATION;
 			pobj.departure_cue = Locked_sexp_false;
-			pobj.departure_location = DEPART_AT_LOCATION;
+			pobj.departure_location = DepartureLocation::AT_LOCATION;
 			
 			pobj.ai_class = sip->ai_class;
 			pobj.warpin_params_index = sip->warpin_params_index;

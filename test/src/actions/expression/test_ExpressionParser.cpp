@@ -20,7 +20,7 @@ TEST_P(ExpressionRandomRangeTest, random_range_exec)
 
 	std::tie(expressionText, expectedReturnType, lowerBound, upperBound) = GetParam();
 
-	ExpressionParser parser(expressionText);
+	ExpressionParser parser(std::move(expressionText));
 
 	const auto expression = parser.parse({});
 
@@ -86,7 +86,7 @@ TEST_P(ExpressionExecutionTest, operator_execution)
 	variables.setValue({"test", "test1"}, Value(vm_vec_new(3.f, 4.f, 5.f)));
 	variables.setValue({"test", "test2"}, Value(8.f));
 
-	ExpressionParser parser(expressionText);
+	ExpressionParser parser(std::move(expressionText));
 
 	const auto expression = parser.parse(context);
 
@@ -153,7 +153,7 @@ class ExpressionParserFailureTest : public testing::TestWithParam<SCP_string> {
 
 TEST_P(ExpressionParserFailureTest, test_parsing)
 {
-	const auto expressionText = GetParam();
+	const auto& expressionText = GetParam();
 
 	ExpressionParser parser(expressionText);
 

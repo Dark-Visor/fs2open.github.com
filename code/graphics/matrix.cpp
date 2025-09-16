@@ -85,7 +85,7 @@ void gr_start_instance_matrix(const vec3d *offset, const matrix *rotation)
 
 	gr_model_matrix_stack.push(offset, rotation);
 
-	auto model_matrix = gr_model_matrix_stack.get_transform();
+	const auto& model_matrix = gr_model_matrix_stack.get_transform();
 	vm_matrix4_x_matrix4(&gr_model_view_matrix, &gr_view_matrix, &model_matrix);
 
 	modelview_matrix_depth++;
@@ -109,7 +109,7 @@ void gr_end_instance_matrix()
 
 	gr_model_matrix_stack.pop();
 
-	auto model_matrix = gr_model_matrix_stack.get_transform();
+	const auto& model_matrix = gr_model_matrix_stack.get_transform();
 	vm_matrix4_x_matrix4(&gr_model_view_matrix, &gr_view_matrix, &model_matrix);
 
 	modelview_matrix_depth--;
@@ -127,9 +127,9 @@ void gr_set_proj_matrix(fov_t fov, float aspect, float z_near, float z_far) {
 
 	gr_last_projection_matrix = gr_projection_matrix;
 
-	if (mpark::holds_alternative<float>(fov)) {
+	if (std::holds_alternative<float>(fov)) {
 		float clip_width, clip_height;
-		clip_height = tan(mpark::get<float>(fov) * 0.5f) * z_near;
+		clip_height = tan(std::get<float>(fov) * 0.5f) * z_near;
 		clip_width = clip_height * aspect;
 		if (gr_screen.rendering_to_texture != -1) {
 			create_perspective_projection_matrix(&gr_projection_matrix, -clip_width, clip_width, clip_height, -clip_height, z_near, z_far);
@@ -138,7 +138,7 @@ void gr_set_proj_matrix(fov_t fov, float aspect, float z_near, float z_far) {
 		}
 	}
 	else {
-		const auto& afov = mpark::get<asymmetric_fov>(fov);
+		const auto& afov = std::get<asymmetric_fov>(fov);
 		float clip_l = tanf(afov.left) * z_near;
 		float clip_r = tanf(afov.right) * z_near;
 		float clip_u = tanf(afov.up) * z_near;
@@ -280,7 +280,7 @@ void gr_end_2d_matrix()
 
 	gr_view_matrix = gr_last_view_matrix;
 
-	auto model_matrix = gr_model_matrix_stack.get_transform();
+	const auto& model_matrix = gr_model_matrix_stack.get_transform();
 	vm_matrix4_x_matrix4(&gr_model_view_matrix, &gr_view_matrix, &model_matrix);
 
 	htl_2d_matrix_set = false;
@@ -302,7 +302,7 @@ void gr_push_scale_matrix(const vec3d *scale_factor)
 
 	gr_model_matrix_stack.push(NULL, NULL, scale_factor);
 
-	auto model_matrix = gr_model_matrix_stack.get_transform();
+	const auto& model_matrix = gr_model_matrix_stack.get_transform();
 	vm_matrix4_x_matrix4(&gr_model_view_matrix, &gr_view_matrix, &model_matrix);
 
 	matrix_uniform_up_to_date = false;
@@ -315,7 +315,7 @@ void gr_pop_scale_matrix()
 
 	gr_model_matrix_stack.pop();
 
-	auto model_matrix = gr_model_matrix_stack.get_transform();
+	const auto& model_matrix = gr_model_matrix_stack.get_transform();
 	vm_matrix4_x_matrix4(&gr_model_view_matrix, &gr_view_matrix, &model_matrix);
 
 	modelview_matrix_depth--;

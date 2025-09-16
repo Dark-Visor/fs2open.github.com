@@ -1,25 +1,37 @@
 
 #include "font.h"
+#include "graphics/software/FontManager.h"
 
 namespace scripting {
 namespace api {
 
 //**********HANDLE: Font
-font_h::font_h(font::FSFont* fontIn): font(fontIn) {
-}
+font_h::font_h(int fontIndex):
+	_fontIndex(fontIndex)
+{}
 
-font_h::font_h(): font(NULL) {
-}
+font_h::font_h()
+	: _fontIndex(-1)
+{}
 
-font::FSFont* font_h::Get() {
+font::FSFont* font_h::Get() const
+{
 	if (!isValid())
-		return NULL;
+		return nullptr;
 
-	return font;
+	return font::FontManager::getFont(_fontIndex);
 }
 
-bool font_h::isValid() {
-	return font != NULL;
+int font_h::GetIndex() const
+{
+	if (!isValid())
+		return -1;
+
+	return _fontIndex;
+}
+
+bool font_h::isValid() const {
+	return font::FontManager::isFontNumberValid(_fontIndex);
 }
 
 ADE_OBJ(l_Font, font_h, "font", "font handle");
@@ -82,6 +94,24 @@ ADE_VIRTVAR(Name, l_Font, "string", "Name of font (including extension)", "strin
 	}
 
 	return ade_set_args(L, "s", fh->Get()->getName().c_str());
+}
+
+ADE_VIRTVAR(FamilyName, l_Font, "string", "Family Name of font. Bitmap fonts always return 'Volition Font'.", "string", nullptr)
+{
+	font_h *fh = nullptr;
+	const char* newname = nullptr;
+	if (!ade_get_args(L, "o|s", l_Font.GetPtr(&fh), &newname))
+		return ade_set_error(L, "s", "");
+
+	if (fh != nullptr && !fh->isValid())
+		return ade_set_error(L, "s", "");
+
+	if (ADE_SETTING_VAR)
+	{
+		LuaError(L, "Setting font family name is not supported!");
+	}
+
+	return ade_set_args(L, "s", fh->Get()->getFamilyName().c_str());
 }
 
 ADE_VIRTVAR(Height, l_Font, "number", "Height of font (in pixels)", "number", "Font height, or 0 if the handle is invalid")

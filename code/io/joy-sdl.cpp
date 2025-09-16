@@ -186,7 +186,12 @@ Joystick* joystick_deserialize(const json_t* value)
 
 	json_error_t err;
 	if (json_unpack_ex((json_t*)value, &err, 0, "{s:s, s:i}", "guid", &guid, "id", &id) != 0) {
-		throw json_exception(err);
+		// throw json_exception(err);
+		// Changed by wookieejedi.
+		// If errors detected then return nullptr (ie, no joystick),
+		// because if we throw errors instead of returning nullptr
+		// then the listening functions short circuits and does not run.
+		return nullptr;
 	}
 
 	for (auto& test_stick : joysticks) {
@@ -208,6 +213,38 @@ json_t* joystick_serializer(Joystick* joystick)
 	}
 
 	return json_pack("{sssi}", "guid", joystick->getGUID().c_str(), "id", joystick->getDeviceId());
+}
+
+/**
+ * Assigns the given cid to the given stick
+ *
+ * @param[in] stick  The stick that is being assigned
+ * @param[in] cid    The cid being assigned, must be a valid short between CID_JOY0 and CID_JOY_MAX
+ */
+void setPlayerJoystick(Joystick* stick, short cid)
+{
+	Assert((cid >= CID_JOY0) && (cid < CID_JOY_MAX));
+	pJoystick[cid] = stick;
+
+	if (cid == CID_JOY0) {
+		joy_ff_shutdown();
+	}
+
+	if (pJoystick[cid] != nullptr) {
+		mprintf(("  Using '%s' as Joy-%i\n", pJoystick[cid]->getName().c_str(), cid));
+		mprintf(("\n"));
+		mprintf(("  Number of axes: %d\n", pJoystick[cid]->numAxes()));
+		mprintf(("  Number of buttons: %d\n", pJoystick[cid]->numButtons()));
+		mprintf(("  Number of hats: %d\n", pJoystick[cid]->numHats()));
+		mprintf(("  Number of trackballs: %d\n", pJoystick[cid]->numBalls()));
+		mprintf(("\n"));
+
+		if (cid == CID_JOY0) {
+			joy_ff_init();
+		}
+	} else {
+		mprintf((" Joystick %i removed\n", cid));
+	}
 }
 
 /**
@@ -241,7 +278,7 @@ SCP_vector<Joystick*> joystick_enumerator()
 auto JoystickOption = options::OptionBuilder<Joystick*>("Input.Joystick",
                      std::pair<const char*, int>{"Joystick 0", 1705},
                      std::pair<const char*, int>{"The current joystick 0", 1706})
-                     .category("Input")                    // Category this option shows up in the scripting heirachy
+                     .category(std::make_pair("Input", 1827))                    // Category this option shows up in the scripting heirachy
                      .deserializer(joystick_deserialize)   // callback for json to C++
                      .serializer(joystick_serializer)      // callback for C++ to json
                      .display(joystick_display)            // callback for constructing the display label
@@ -250,12 +287,16 @@ auto JoystickOption = options::OptionBuilder<Joystick*>("Input.Joystick",
                      .default_val(nullptr)                 // initial/default value for this option
                      .flags({options::OptionFlags::ForceMultiValueSelection})
                      .importance(3)
+                     .change_listener([](Joystick* joy, bool) {
+                         setPlayerJoystick(joy, CID_JOY0);
+                         return true;
+                     })
                      .finish();
 
 auto JoystickOption1 = options::OptionBuilder<Joystick*>("Input.Joystick1",
                      std::pair<const char*, int>{"Joystick 1", 1707},
                      std::pair<const char*, int>{"The current joystick 1", 1708})
-                     .category("Input")
+                     .category(std::make_pair("Input", 1827))
                      .deserializer(joystick_deserialize)
                      .serializer(joystick_serializer)
                      .display(joystick_display)
@@ -264,12 +305,16 @@ auto JoystickOption1 = options::OptionBuilder<Joystick*>("Input.Joystick1",
                      .default_val(nullptr)
                      .flags({ options::OptionFlags::ForceMultiValueSelection })
                      .importance(3)
+                     .change_listener([](Joystick* joy, bool) {
+                         setPlayerJoystick(joy, CID_JOY1);
+                         return true;
+                     })
                      .finish();
 
 auto JoystickOption2 = options::OptionBuilder<Joystick*>("Input.Joystick2",
                      std::pair<const char*, int>{"Joystick 2", 1709},
                      std::pair<const char*, int>{"The current joystick 2", 1710})
-                     .category("Input")
+                     .category(std::make_pair("Input", 1827))
                      .deserializer(joystick_deserialize)
                      .serializer(joystick_serializer)
                      .display(joystick_display)
@@ -278,12 +323,16 @@ auto JoystickOption2 = options::OptionBuilder<Joystick*>("Input.Joystick2",
                      .default_val(nullptr)
                      .flags({ options::OptionFlags::ForceMultiValueSelection })
                      .importance(3)
+                     .change_listener([](Joystick* joy, bool) {
+                         setPlayerJoystick(joy, CID_JOY2);
+                         return true;
+                     })
                      .finish();
 
 auto JoystickOption3 = options::OptionBuilder<Joystick*>("Input.Joystick3",
                      std::pair<const char*, int>{"Joystick 3", 1711},
                      std::pair<const char*, int>{"The current joystick 3", 1712})
-                     .category("Input")
+                     .category(std::make_pair("Input", 1827))
                      .deserializer(joystick_deserialize)
                      .serializer(joystick_serializer)
                      .display(joystick_display)
@@ -292,6 +341,10 @@ auto JoystickOption3 = options::OptionBuilder<Joystick*>("Input.Joystick3",
                      .default_val(nullptr)
                      .flags({ options::OptionFlags::ForceMultiValueSelection })
                      .importance(3)
+                     .change_listener([](Joystick* joy, bool) {
+                         setPlayerJoystick(joy, CID_JOY3);
+                         return true;
+                     })
                      .finish();
 
 HatPosition convertSDLHat(int val)
@@ -344,33 +397,6 @@ void enumerateJoysticks(SCP_vector<JoystickPtr>& outVec)
 				mprintf(("    %s\n", SDL_GetError()));
 				SDL_ClearError();
 			}
-	}
-}
-
-/**
- * Assigns the given cid to the given stick
- *
- * @param[in] stick  The stick that is being assigned
- * @param[in] cid    The cid being assigned, must be a valid short between CID_JOY0 and CID_JOY_MAX
- */
-void setPlayerJoystick(Joystick *stick, short cid)
-{
-	Assert((cid >= CID_JOY0) && (cid < CID_JOY_MAX));
-	pJoystick[cid] = stick;
-
-	if (pJoystick[cid] != nullptr)
-	{
-		mprintf(("  Using '%s' as Joy-%i\n", pJoystick[cid]->getName().c_str(), cid));
-		mprintf(("\n"));
-		mprintf(("  Number of axes: %d\n", pJoystick[cid]->numAxes()));
-		mprintf(("  Number of buttons: %d\n", pJoystick[cid]->numButtons()));
-		mprintf(("  Number of hats: %d\n", pJoystick[cid]->numHats()));
-		mprintf(("  Number of trackballs: %d\n", pJoystick[cid]->numBalls()));
-		mprintf(("\n"));
-	}
-	else
-	{
-		mprintf((" Joystick %i removed\n", cid));
 	}
 }
 
@@ -581,6 +607,9 @@ namespace joystick
 
 	Joystick &Joystick::operator=(Joystick &&other) noexcept
 	{
+		if (this == &other)
+			return *this;
+
 		std::swap(_device_id, other._device_id);
 		std::swap(_joystick, other._joystick);
 
@@ -592,6 +621,16 @@ namespace joystick
 	bool Joystick::isAttached() const
 	{
 		return SDL_JoystickGetAttached(_joystick) == SDL_TRUE;
+	}
+
+	bool Joystick::isHaptic() const
+	{
+		return _isHaptic;
+	}
+
+	bool Joystick::isGamepad() const
+	{
+		return _isGamepad;
 	}
 
 	Sint16 Joystick::getAxis(int index) const
@@ -747,6 +786,7 @@ namespace joystick
 		_guidStr = getJoystickGUID(_joystick);
 		_id = SDL_JoystickInstanceID(_joystick);
 		_isHaptic = SDL_JoystickIsHaptic(_joystick);
+		_isGamepad = SDL_IsGameController(_device_id) == SDL_TRUE;
 
 		// Initialize values of the axes
 		auto numSticks = SDL_JoystickNumAxes(_joystick);
@@ -1035,10 +1075,10 @@ namespace joystick
 		if (Using_in_game_options)
 		{
 			// The new options system is in use
-			setPlayerJoystick(JoystickOption->getValue(), 0);
-			setPlayerJoystick(JoystickOption1->getValue(), 1);
-			setPlayerJoystick(JoystickOption2->getValue(), 2);
-			setPlayerJoystick(JoystickOption3->getValue(), 3);
+			setPlayerJoystick(JoystickOption->getValue(), CID_JOY0);
+			setPlayerJoystick(JoystickOption1->getValue(), CID_JOY1);
+			setPlayerJoystick(JoystickOption2->getValue(), CID_JOY2);
+			setPlayerJoystick(JoystickOption3->getValue(), CID_JOY3);
 		}
 		else
 		{
@@ -1069,8 +1109,6 @@ namespace joystick
 		}
 
 		initialized = true;
-
-		joy_ff_init();
 
 		return true;
 	}
